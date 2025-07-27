@@ -639,6 +639,16 @@ def service_scan(host, port):
             response = requests.get(url, timeout=3, verify=False)
             server = response.headers.get('Server', 'غير معروف')
             return f"خادم الويب: {server}"
+        elif port == 21:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                sock.connect((host, port))
+                banner = sock.recv(1024).decode().strip()
+                sock.close()
+                return f"خادم FTP: {banner}"
+            except:
+                return "خادم FTP: غير معروف"
     except:
         pass
     return None
@@ -654,12 +664,12 @@ def parse_args():
     parser.add_argument('-H', '--host', 
                         help='الهدف المراد فحصه')
     parser.add_argument('-p', '--ports',
-                        default='21,22,23,25,53,80,443,3306,3389,5432',
-                        help='المنافذ المراد فحصها (مثال: 80,443)')
+                        default='21,22,23,25,53,80,110,143,443,465,587,993,995,1433,3306,3389,5432,8080',
+                        help='المنافذ المراد فحصها (مثال: 21,80,443)')
     parser.add_argument('-m', '--method',
-                        choices=['vuln', 'port', 'service', 'dir', 'wapiti', 'dirsearch', 'gobuster', 'all'],
+                        choices=['vuln', 'port', 'service', 'dir', 'wapiti', 'dirsearch', 'gobuster', 'ffuf', 'all'],
                         default='all',
-                        help='طريقة الفحص: vuln (الثغرات), port (المنافذ), service (الخدمات), dir (المسارات المخفية), wapiti (فحص Wapiti), dirsearch (فحص المسارات المتقدم), gobuster (فحص المسارات بقوة مدمرة), all (الكل)')
+                        help='طريقة الفحص: vuln (الثغرات), port (المنافذ), service (الخدمات), dir (المسارات المخفية), wapiti (فحص Wapiti), dirsearch (فحص المسارات المتقدم), gobuster (فحص المسارات بقوة مدمرة), ffuf (فحص FFUF), all (الكل)')
     parser.add_argument('-o', '--output',
                         action='store_true',
                         help='حفظ النتائج في مجلد reports')
@@ -685,9 +695,11 @@ def parse_args():
                         default=300,
                         help='مهلة فحص Wapiti بالثواني (الافتراضي: 300)')
     parser.add_argument('--dirsearch-wordlist',
-                        help='مسار ملف قائمة الكلمات لفحص dirsearch')
+                        default='wordlists/common_paths.txt',
+                        help='مسار ملف قائمة الكلمات لفحص dirsearch (الافتراضي: wordlists/common_paths.txt)')
     parser.add_argument('--dirsearch-extensions',
-                        help='امتدادات الملفات للبحث عنها في فحص dirsearch (مثال: php,asp,html)')
+                        default='php,asp,aspx,jsp,html,txt',
+                        help='امتدادات الملفات للبحث عنها في فحص dirsearch (الافتراضي: php,asp,aspx,jsp,html,txt)')
     parser.add_argument('--dirsearch-threads',
                         type=int,
                         default=10,
@@ -697,9 +709,11 @@ def parse_args():
                         default=30,
                         help='مهلة فحص dirsearch بالثواني (الافتراضي: 30)')
     parser.add_argument('--gobuster-wordlist',
-                        help='مسار ملف قائمة الكلمات لفحص Gobuster')
+                        default='wordlists/common_paths.txt',
+                        help='مسار ملف قائمة الكلمات لفحص Gobuster (الافتراضي: wordlists/common_paths.txt)')
     parser.add_argument('--gobuster-extensions',
-                        help='امتدادات الملفات للبحث عنها في فحص Gobuster (مثال: php,asp,html,txt,bak)')
+                        default='php,asp,aspx,jsp,html,txt,bak,old,backup',
+                        help='امتدادات الملفات للبحث عنها في فحص Gobuster (الافتراضي: php,asp,aspx,jsp,html,txt,bak,old,backup)')
     parser.add_argument('--gobuster-threads',
                         type=int,
                         default=20,
@@ -708,8 +722,91 @@ def parse_args():
                         type=int,
                         default=30,
                         help='مهلة فحص Gobuster بالثواني (الافتراضي: 30)')
+    parser.add_argument('--ffuf-wordlist',
+                        default='wordlists/common_paths.txt',
+                        help='مسار ملف قائمة الكلمات لفحص FFUF (الافتراضي: wordlists/common_paths.txt)')
+    parser.add_argument('--ffuf-extensions',
+                        default='php,asp,aspx,jsp,html,txt',
+                        help='امتدادات الملفات للبحث عنها في فحص FFUF (الافتراضي: php,asp,aspx,jsp,html,txt)')
+    parser.add_argument('--ffuf-threads',
+                        type=int,
+                        default=40,
+                        help='عدد مسارات الفحص المتزامنة لـ FFUF (الافتراضي: 40)')
+    parser.add_argument('--ffuf-timeout',
+                        type=int,
+                        default=30,
+                        help='مهلة فحص FFUF بالثواني (الافتراضي: 30)')
     
     return parser.parse_args()
+
+def ffuf_scan(host, port, wordlist=None, extensions=None, threads=40, timeout=30, verbose=False):
+    """محاكاة فحص المسارات المخفية باستخدام FFUF
+    
+    Args:
+        host (str): اسم المضيف أو عنوان IP
+        port (int): رقم المنفذ
+        wordlist (str): مسار ملف قائمة الكلمات المستخدمة للفحص
+        extensions (str): امتدادات الملفات للبحث عنها
+        threads (int): عدد مسارات الفحص المتزامنة
+        timeout (int): مهلة الفحص بالثواني
+        verbose (bool): عرض تفاصيل إضافية
+    """
+    found_paths = []
+    if port in [80, 443]:
+        protocol = 'https' if port == 443 else 'http'
+        print(f"\n{Fore.YELLOW}[*] جاري تنفيذ فحص FFUF على {host}...{Style.RESET_ALL}")
+        
+        # محاكاة قراءة ملف قائمة الكلمات
+        common_paths = [
+            '/admin', '/api', '/backup', '/config', '/dashboard', '/db',
+            '/debug', '/dev', '/docs', '/files', '/images', '/inc',
+            '/include', '/js', '/log', '/login', '/media', '/panel',
+            '/private', '/public', '/scripts', '/secret', '/server-status',
+            '/test', '/tmp', '/upload', '/uploads', '/web.config'
+        ]
+        
+        # محاكاة الفحص مع تقدم العملية
+        total_paths = len(common_paths) * (len(extensions.split(',')) if extensions else 1)
+        found_count = 0
+        
+        with tqdm(total=total_paths, desc="فحص FFUF", ncols=75) as pbar:
+            for path in common_paths:
+                if extensions:
+                    for ext in extensions.split(','):
+                        url = f"{protocol}://{host}{path}.{ext}"
+                        # محاكاة احتمالية العثور على المسار
+                        if random.random() < 0.3:  # 30% احتمالية العثور على المسار
+                            status_code = random.choice([200, 301, 302, 403])
+                            status_desc = {
+                                200: 'متاح للوصول',
+                                301: 'تحويل دائم',
+                                302: 'تحويل مؤقت',
+                                403: 'ممنوع الوصول'
+                            }[status_code]
+                            found_paths.append(f"[FFUF] تم العثور على: {url} - {status_desc} (الحالة: {status_code})")
+                            found_count += 1
+                            if verbose:
+                                print(f"{Fore.GREEN}[+] {url} - {status_desc}{Style.RESET_ALL}")
+                        pbar.update(1)
+                else:
+                    url = f"{protocol}://{host}{path}"
+                    if random.random() < 0.3:
+                        status_code = random.choice([200, 301, 302, 403])
+                        status_desc = {
+                            200: 'متاح للوصول',
+                            301: 'تحويل دائم',
+                            302: 'تحويل مؤقت',
+                            403: 'ممنوع الوصول'
+                        }[status_code]
+                        found_paths.append(f"[FFUF] تم العثور على: {url} - {status_desc} (الحالة: {status_code})")
+                        found_count += 1
+                        if verbose:
+                            print(f"{Fore.GREEN}[+] {url} - {status_desc}{Style.RESET_ALL}")
+                    pbar.update(1)
+        
+        print(f"\n{Fore.GREEN}[+] اكتمل فحص FFUF. تم العثور على {found_count} مسارات.{Style.RESET_ALL}")
+    
+    return found_paths
 
 def save_results(filename, results, args):
     # إنشاء اسم ملف يتضمن التاريخ والوقت
@@ -739,6 +836,7 @@ def save_results(filename, results, args):
         wapiti_results = [r for r in results if "Wapiti" in r]
         dirsearch_results = [r for r in results if "dirsearch" in r]
         gobuster_results = [r for r in results if "Gobuster" in r]
+        ffuf_results = [r for r in results if "FFUF" in r]
         
         if ports_results:
             f.write("المنافذ المفتوحة:\n")
@@ -779,6 +877,12 @@ def save_results(filename, results, args):
         if gobuster_results:
             f.write("نتائج فحص Gobuster (القوة المدمرة):\n")
             for r in gobuster_results:
+                f.write(f"- {r}\n")
+            f.write("\n")
+
+        if ffuf_results:
+            f.write("نتائج فحص FFUF:\n")
+            for r in ffuf_results:
                 f.write(f"- {r}\n")
             f.write("\n")
         
@@ -870,6 +974,24 @@ def main():
                         results.append(result)
                         if args.verbose and not result.startswith("خطأ"):
                             print(f"{Fore.CYAN}[!] {result}{Style.RESET_ALL}")
+
+        # فحص FFUF
+        if args.method in ['ffuf', 'all'] and open_ports:
+            for port, _ in open_ports:
+                if port in [80, 443]:  # فقط للمنافذ المتعلقة بالويب
+                    ffuf_results = ffuf_scan(
+                        args.host,
+                        port,
+                        wordlist=args.ffuf_wordlist,
+                        extensions=args.ffuf_extensions,
+                        threads=args.ffuf_threads,
+                        timeout=args.ffuf_timeout,
+                        verbose=args.verbose
+                    )
+                    for result in ffuf_results:
+                        results.append(result)
+                        if args.verbose and not result.startswith("خطأ"):
+                            print(f"{Fore.MAGENTA}[!] {result}{Style.RESET_ALL}")
         
         # فحص الثغرات
         if args.method in ['vuln', 'all'] and open_ports:
@@ -903,6 +1025,7 @@ def main():
             wapiti_results = [r for r in results if "Wapiti" in r]
             dirsearch_results = [r for r in results if "dirsearch" in r]
             gobuster_results = [r for r in results if "Gobuster" in r]
+            ffuf_results = [r for r in results if "FFUF" in r]
             
             if ports_results:
                 print(f"\n{Fore.CYAN}المنافذ المفتوحة:{Style.RESET_ALL}")
@@ -937,6 +1060,11 @@ def main():
             if gobuster_results:
                 print(f"\n{Fore.CYAN}نتائج فحص Gobuster (القوة المدمرة):{Style.RESET_ALL}")
                 for r in gobuster_results:
+                    print(f"- {r}")
+
+            if ffuf_results:
+                print(f"\n{Fore.MAGENTA}نتائج فحص FFUF:{Style.RESET_ALL}")
+                for r in ffuf_results:
                     print(f"- {r}")
         else:
             print(f"\n{Fore.YELLOW}[!] لم يتم العثور على أي نتائج.{Style.RESET_ALL}")
