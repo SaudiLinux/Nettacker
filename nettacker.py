@@ -661,7 +661,8 @@ def parse_args():
                         default='all',
                         help='طريقة الفحص: vuln (الثغرات), port (المنافذ), service (الخدمات), dir (المسارات المخفية), wapiti (فحص Wapiti), dirsearch (فحص المسارات المتقدم), gobuster (فحص المسارات بقوة مدمرة), all (الكل)')
     parser.add_argument('-o', '--output',
-                        help='حفظ النتائج في ملف')
+                        action='store_true',
+                        help='حفظ النتائج في مجلد reports')
     parser.add_argument('-v', '--verbose',
                         action='store_true',
                         help='عرض تفاصيل إضافية')
@@ -711,7 +712,14 @@ def parse_args():
     return parser.parse_args()
 
 def save_results(filename, results, args):
-    with open(filename, 'w', encoding='utf-8-sig') as f:
+    # إنشاء اسم ملف يتضمن التاريخ والوقت
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    report_filename = os.path.join('reports', f'report_{timestamp}_{args.host}.txt')
+    
+    # التأكد من وجود مجلد reports
+    os.makedirs('reports', exist_ok=True)
+    
+    with open(report_filename, 'w', encoding='utf-8-sig') as f:
         f.write(f"تقرير فحص Nettacker - {datetime.now()}\n")
         f.write("=" * 50 + "\n\n")
         
@@ -933,10 +941,10 @@ def main():
         else:
             print(f"\n{Fore.YELLOW}[!] لم يتم العثور على أي نتائج.{Style.RESET_ALL}")
         
-        # حفظ النتائج في ملف
+        # حفظ النتائج في مجلد reports
         if args.output and results:
-            save_results(args.output, results, args)
-            print(f"\n{Fore.GREEN}[+] تم حفظ النتائج في {args.output}{Style.RESET_ALL}")
+            save_results(None, results, args)
+            print(f"\n{Fore.GREEN}[+] تم حفظ النتائج في مجلد reports{Style.RESET_ALL}")
         
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}[!] تم إلغاء العملية بواسطة المستخدم.{Style.RESET_ALL}")
