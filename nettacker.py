@@ -1,118 +1,32 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-'''
-OWASP Nettacker Clone
-Developed by: SayerLinux
-Email: SaudiSayer@gmail.com
-'''
-
-import sys
-import socket
 import argparse
-import textwrap
-import subprocess
 import os
-import tempfile
 import random
+import requests
+import socket
+import string
+import sys
+import textwrap
 import time
 from datetime import datetime
-from colorama import init, Fore, Style
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-import requests
-from bs4 import BeautifulSoup
-from scapy.all import *
-import urllib3
-import string
 
-# Disable SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from colorama import Fore, Style
 
-# Initialize colorama
-init()
+# تعطيل تحذيرات SSL
+requests.packages.urllib3.disable_warnings()
 
 def show_logo():
-    # تحقق من وجود ملفات اللوقو
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    svg_file = os.path.join(current_dir, 'logo.svg')
-    html_file = os.path.join(current_dir, 'logo.html')
-    
-    if os.path.exists(svg_file) and os.path.exists(html_file):
-        # عرض رسالة عن اللوقو الجديد مع خيار فتح الملف HTML
-        print(f"{Fore.CYAN}{Style.BRIGHT}")
-        print("╔" + "═" * 70 + "╗")
-        print("║" + " " * 70 + "║")
-        print("║" + "  NETTACKER - أداة فحص الشبكات المتقدمة  ".center(70) + "║")
-        print("║" + " " * 70 + "║")
-        print("║" + "  تم إضافة لوقو مميز جديد!  ".center(70) + "║")
-        print("║" + " " * 70 + "║")
-        print("║" + "  لعرض اللوقو بشكل تفاعلي، يمكنك فتح الملف التالي في المتصفح:  ".center(70) + "║")
-        print("║" + " " * 70 + "║")
-        print("║" + f"  {html_file}  ".center(70) + "║")
-        print("║" + " " * 70 + "║")
-        print("║" + "  هل ترغب في فتح اللوقو الآن؟ (y/n)  ".center(70) + "║")
-        print("║" + " " * 70 + "║")
-        print("╚" + "═" * 70 + "╝")
-        
-        # انتظار رد المستخدم
-        try:
-            choice = input(f"{Fore.YELLOW}اختيارك: {Style.RESET_ALL}")
-            if choice.lower() == 'y':
-                # فتح ملف HTML في المتصفح الافتراضي
-                try:
-                    if sys.platform.startswith('win'):
-                        os.startfile(html_file)
-                    elif sys.platform.startswith('darwin'):  # macOS
-                        subprocess.call(['open', html_file])
-                    else:  # Linux
-                        subprocess.call(['xdg-open', html_file])
-                    print(f"{Fore.GREEN}تم فتح اللوقو في المتصفح!{Style.RESET_ALL}")
-                except Exception as e:
-                    print(f"{Fore.RED}حدث خطأ أثناء محاولة فتح الملف: {e}{Style.RESET_ALL}")
-                    print(f"{Fore.YELLOW}يمكنك فتح الملف يدوياً: {html_file}{Style.RESET_ALL}")
-        except KeyboardInterrupt:
-            print(f"\n{Fore.YELLOW}تم إلغاء العملية.{Style.RESET_ALL}")
-        
-        # عرض معلومات إضافية
-        print(f"\n{Fore.CYAN}{Style.BRIGHT}Version 1.0.0")
-        print(f"Developed by SayerLinux (SaudiSayer@gmail.com)")
-        print(f"OWASP Nettacker Clone{Style.RESET_ALL}\n")
-    else:
-        # عرض اللوقو النصي القديم إذا لم يتم العثور على ملفات اللوقو
-        logo = f'''{Fore.GREEN}
-    _   _      _   _             _
-   | \ | | ___| |_| |_ __ _  ___| | _____ _ __
-   |  \| |/ _ \ __| __/ _` |/ __| |/ / _ \ '__|
-   | |\  |  __/ |_| || (_| | (__|   <  __/ |
-   |_| \_|\___|\__|\__\__,_|\___|_|\_\___|_|
-                                            
-    {Style.BRIGHT}Version 1.0.0
-    Developed by SayerLinux (SaudiSayer@gmail.com)
-    OWASP Nettacker Clone{Style.RESET_ALL}
-    '''
-        print(logo)
+    print(f"\n{Fore.YELLOW}OWASP Nettacker Clone\nBy SayerLinux (SaudiSayer@gmail.com){Style.RESET_ALL}")
 
 def port_scan(host, port):
     try:
-        # للتجربة: إذا كان الهدف هو example.com والمنفذ 80 أو 443، نفترض أنه مفتوح
-        if host == 'example.com' and port in [80, 443]:
-            try:
-                service = socket.getservbyport(port)
-            except:
-                service = 'http' if port == 80 else 'https'
-            return (port, True, service)
-            
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex((host, port))
-        if result == 0:
-            try:
-                service = socket.getservbyport(port)
-            except:
-                service = 'غير معروف'
-            return (port, True, service)
-        return (port, False, None)
+        sock.settimeout(3)
+        sock.connect((host, port))
+        banner = sock.recv(1024).decode().strip()
+        sock.close()
+        return (port, True, banner)
     except:
         return (port, False, None)
     finally:
@@ -358,6 +272,81 @@ def dirsearch_scan(host, port, wordlist=None, extensions=None, threads=10, timeo
         found_paths.append("لم يتم العثور على مسارات باستخدام dirsearch")
     
     return found_paths
+
+def wpscan_scan(host, port, timeout=30, verbose=False):
+    """
+    فحص موقع WordPress باستخدام WPScan
+    
+    Args:
+        host (str): اسم المضيف أو عنوان IP
+        port (int): رقم المنفذ
+        timeout (int): مهلة الفحص بالثواني
+        verbose (bool): عرض تفاصيل إضافية
+    
+    Returns:
+        list: قائمة بالنتائج المكتشفة
+    """
+    if port not in [80, 443]:
+        return []
+    
+    from wpscan import WPScan
+    
+    protocol = 'https' if port == 443 else 'http'
+    target_url = f"{protocol}://{host}"
+    
+    print(f"\n{Fore.YELLOW}[*] جاري تشغيل فحص WPScan على {target_url}...{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}[*] قد يستغرق هذا الفحص بعض الوقت...{Style.RESET_ALL}")
+    
+    results = []
+    try:
+        scanner = WPScan(target_url)
+        findings = scanner.scan()
+        
+        # معالجة النتائج
+        if findings.get('wordpress_version'):
+            version = findings['wordpress_version']
+            results.append(f"إصدار WordPress: {version}")
+        
+        # فحص الإضافات
+        if findings.get('plugins'):
+            results.append("\nالإضافات المكتشفة:")
+            for plugin in findings['plugins']:
+                results.append(f"- {plugin['name']} (الإصدار: {plugin.get('version', 'غير معروف')})")
+        
+        # فحص القوالب
+        if findings.get('themes'):
+            results.append("\nالقوالب المكتشفة:")
+            for theme in findings['themes']:
+                results.append(f"- {theme['name']} (الإصدار: {theme.get('version', 'غير معروف')})")
+        
+        # فحص المستخدمين
+        if findings.get('users'):
+            results.append("\nالمستخدمين المكتشفين:")
+            for user in findings['users']:
+                results.append(f"- {user['username']}")
+        
+        # فحص الثغرات
+        if findings.get('vulnerabilities'):
+            results.append("\nالثغرات المكتشفة:")
+            for vuln in findings['vulnerabilities']:
+                results.append(f"- {vuln['title']} (الخطورة: {vuln.get('severity', 'غير معروفة')})")
+                if vuln.get('fixed_in'):
+                    results.append(f"  تم إصلاحها في الإصدار: {vuln['fixed_in']}")
+        
+        if verbose:
+            for result in results:
+                if 'ثغرة' in result:
+                    print(f"{Fore.RED}[!] {result}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.GREEN}[+] {result}{Style.RESET_ALL}")
+    
+    except Exception as e:
+        error_msg = f"خطأ في فحص WPScan: {str(e)}"
+        results.append(error_msg)
+        if verbose:
+            print(f"{Fore.RED}[!] {error_msg}{Style.RESET_ALL}")
+    
+    return results
 
 def vulnerability_scan(host, port):
     common_vulns = {
@@ -667,9 +656,9 @@ def parse_args():
                         default='21,22,23,25,53,80,110,143,443,465,587,993,995,1433,3306,3389,5432,8080',
                         help='المنافذ المراد فحصها (مثال: 21,80,443)')
     parser.add_argument('-m', '--method',
-                        choices=['vuln', 'port', 'service', 'dir', 'wapiti', 'dirsearch', 'gobuster', 'ffuf', 'all'],
+                        choices=['vuln', 'port', 'service', 'dir', 'wapiti', 'dirsearch', 'gobuster', 'ffuf', 'wpscan', 'all'],
                         default='all',
-                        help='طريقة الفحص: vuln (الثغرات), port (المنافذ), service (الخدمات), dir (المسارات المخفية), wapiti (فحص Wapiti), dirsearch (فحص المسارات المتقدم), gobuster (فحص المسارات بقوة مدمرة), ffuf (فحص FFUF), all (الكل)')
+                        help='طريقة الفحص: vuln (الثغرات), port (المنافذ), service (الخدمات), dir (المسارات المخفية), wapiti (فحص Wapiti), dirsearch (فحص المسارات المتقدم), gobuster (فحص المسارات بقوة مدمرة), ffuf (فحص FFUF), wpscan (فحص WordPress), all (الكل)')
     parser.add_argument('-o', '--output',
                         action='store_true',
                         help='حفظ النتائج في مجلد reports')
@@ -736,6 +725,10 @@ def parse_args():
                         type=int,
                         default=30,
                         help='مهلة فحص FFUF بالثواني (الافتراضي: 30)')
+    parser.add_argument('--wpscan-timeout',
+                        type=int,
+                        default=30,
+                        help='مهلة فحص WPScan بالثواني (الافتراضي: 30)')
     
     return parser.parse_args()
 
@@ -885,6 +878,13 @@ def save_results(filename, results, args):
             for r in ffuf_results:
                 f.write(f"- {r}\n")
             f.write("\n")
+
+        wpscan_results = [r for r in results if "WPScan" in r]
+        if wpscan_results:
+            f.write("نتائج فحص WPScan:\n")
+            for r in wpscan_results:
+                f.write(f"- {r}\n")
+            f.write("\n")
         
         f.write("\n" + "=" * 50 + "\n")
         f.write("تم إنشاء هذا التقرير بواسطة Nettacker\n")
@@ -992,6 +992,21 @@ def main():
                         results.append(result)
                         if args.verbose and not result.startswith("خطأ"):
                             print(f"{Fore.MAGENTA}[!] {result}{Style.RESET_ALL}")
+
+        # فحص WPScan
+        if args.method in ['wpscan', 'all'] and open_ports:
+            for port, _ in open_ports:
+                if port in [80, 443]:  # فقط للمنافذ المتعلقة بالويب
+                    wpscan_results = wpscan_scan(
+                        args.host,
+                        port,
+                        timeout=args.wpscan_timeout,
+                        verbose=args.verbose
+                    )
+                    for result in wpscan_results:
+                        results.append(result)
+                        if args.verbose and not result.startswith("خطأ"):
+                            print(f"{Fore.BLUE}[!] {result}{Style.RESET_ALL}")
         
         # فحص الثغرات
         if args.method in ['vuln', 'all'] and open_ports:
@@ -1072,13 +1087,13 @@ def main():
         # حفظ النتائج في مجلد reports
         if args.output and results:
             save_results(None, results, args)
-            print(f"\n{Fore.GREEN}[+] تم حفظ النتائج في مجلد reports{Style.RESET_ALL}")
-        
+            print(f"\n{Fore.GREEN}[+] تم حفظ النتائج في مجلد reports.{Style.RESET_ALL}")
+    
     except KeyboardInterrupt:
-        print(f"\n{Fore.YELLOW}[!] تم إلغاء العملية بواسطة المستخدم.{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}[!] تم إيقاف الفحص بواسطة المستخدم.{Style.RESET_ALL}")
         sys.exit(0)
     except Exception as e:
-        print(f"\n{Fore.RED}خطأ: {str(e)}{Style.RESET_ALL}")
+        print(f"\n{Fore.RED}[!] حدث خطأ: {str(e)}{Style.RESET_ALL}")
         sys.exit(1)
 
 if __name__ == '__main__':
